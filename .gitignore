@@ -1,3 +1,4 @@
+.idea
 paper_implementations/AlexNet_Cifar10.pth
 paper_implementations/ILSVRC2012_devkit_t12.tar.gz
 paper_implementations/meta.bin
