@@ -5,3 +5,4 @@ paper_implementations/meta.bin
 paper_implementations/CIFAR
 paper_implementations/MNIST
 paper_implementations/data
+paper_implementations/ResNet18.pth
