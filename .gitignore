@@ -8,3 +8,4 @@ paper_implementations/data
 paper_implementations/ResNet18.pth
 paper_implementations/ResNet18_ImageNette.pth
 paper_implementations/AlexNet_ImageNette.pth
+paper_implementations/weights
