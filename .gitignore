@@ -6,3 +6,6 @@ paper_implementations/CIFAR
 paper_implementations/MNIST
 paper_implementations/data
 paper_implementations/weights
+paper_implementations/QMML_Hackathon
+paper_implementations/.ipynb_checkpoints/
+paper_implementations/trained_weights/
