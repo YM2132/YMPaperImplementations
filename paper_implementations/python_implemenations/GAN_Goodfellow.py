@@ -10,9 +10,11 @@ from torch.utils.data import TensorDataset, ConcatDataset, random_split, DataLoa
 import numpy as np
 import matplotlib.pyplot as plt
 def imshow(img):
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
+	img = img / 2 + 0.5  # unnormalize
+	npimg = img.numpy()
+	plt.imshow(np.transpose(npimg, (1, 2, 0)))
+	plt.show()
+
 
 # Check if MPS is available, if not check if CUDA is available
 if torch.backends.mps.is_available():
