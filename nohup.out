@@ -6579,3 +6579,13 @@ Skipping registering GPU devices...
 [I 12:28:33.704 NotebookApp] Starting buffering for e89cc2ab-1203-4152-b08d-01a19f96fba9:7b1035b3f6a648e3ba5c87c3bb8f1555
 [I 12:52:18.269 NotebookApp] Saving file at /paper_implementations/GANs_for_seaturtle_image_gen/PGGAN_Round4.ipynb
 [W 14:49:41.391 NotebookApp] delete /paper_implementations/GANs_for_seaturtle_image_gen/license.txt
+[I 14:52:44.686 NotebookApp] Discarding 67892 buffered messages for e89cc2ab-1203-4152-b08d-01a19f96fba9:7b1035b3f6a648e3ba5c87c3bb8f1555
+[I 15:01:00.770 NotebookApp] Starting buffering for e89cc2ab-1203-4152-b08d-01a19f96fba9:b34cd2528b8845b7874471027659f37d
+[I 15:01:03.404 NotebookApp] Kernel restarted: e89cc2ab-1203-4152-b08d-01a19f96fba9
+[I 15:01:03.427 NotebookApp] Restoring connection for e89cc2ab-1203-4152-b08d-01a19f96fba9:b34cd2528b8845b7874471027659f37d
+[I 15:01:03.427 NotebookApp] Replaying 1 buffered messages
+0.00s - Debugger warning: It seems that frozen modules are being used, which may
+0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off
+0.00s - to python to disable frozen modules.
+0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.
+[I 15:02:46.834 NotebookApp] Saving file at /paper_implementations/GANs_for_seaturtle_image_gen/PGGAN_Round4.ipynb
