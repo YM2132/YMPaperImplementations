@@ -28,3 +28,10 @@ paper_implementations/GANs_for_seaturtle_image_gen/annotations.json
 paper_implementations/creating_figures_for_posts.ipynb
 paper_implementations/figures
 paper_implementations/StyleGAN1
+paper_implementations/GANs_for_seaturtle_image_gen/.ipynb_checkpoints/PGGAN_Gulrajani-checkpoint.ipynb
+paper_implementations/GANs_for_seaturtle_image_gen/PGGAN_Gulrajani.ipynb
+paper_implementations/Progressive_GAN.html
+paper_implementations/Progressive_GAN_files/
+paper_implementations/celeba_hq_256/
+paper_implementations/nohup.out
+paper_implementations/pggan_figures/
