@@ -25,3 +25,4 @@ paper_implementations/GANs_for_seaturtle_image_gen/samples
 paper_implementations/GANs_for_seaturtle_image_gen/checkpoints
 paper_implementations/GANs_for_seaturtle_image_gen/images
 paper_implementations/GANs_for_seaturtle_image_gen/annotations.json
+.DS_Store
