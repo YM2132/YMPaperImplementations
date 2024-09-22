@@ -62,7 +62,8 @@ d_optimizer = torch.optim.Adam(d.parameters(), lr=lr, betas=(0.0, 0.99))
 start_layer = 1
 start_iter = 0
 
-resume_checkpoint = '/home/yusuf/python/YMPaperImplementations/paper_implementations/python_implementations/StyleGAN/checkpoints/run_20240915_115437/checkpoint_20240915_115437/completed_checkpoint_g_and_EMA_layer_3.pth'
+#resume_checkpoint = '/home/yusuf/python/YMPaperImplementations/paper_implementations/python_implementations/StyleGAN/checkpoints/run_20240915_115437/checkpoint_20240915_115437/completed_checkpoint_g_and_EMA_layer_3.pth'
+resume_checkpoint = None
 if resume_checkpoint:
     if os.path.isfile(resume_checkpoint):
         print(f"=> loading checkpoint '{resume_checkpoint}'")
