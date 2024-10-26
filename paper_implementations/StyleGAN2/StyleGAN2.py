@@ -65,76 +65,78 @@ def show_images(images, num_images=16, figsize=(10,10)):
     plt.axis('off')
     plt.show()
 
-class EqualLR:
-    def __init__(self, name):
-        self.name = name
-    
-    def compute_weight(self, module):
-        weight = getattr(module, self.name + '_orig')  
-        fan_in = weight.data.size(1) * weight.data[0][0].numel()
-
-        return weight * sqrt(2 / (fan_in))
-
-    @staticmethod
-    def apply(module, name):
-        fn = EqualLR(name)
-        
-        weight = getattr(module, name)
-        del module._parameters[name]
-        module.register_parameter(name + '_orig', nn.Parameter(weight.data))
-        module.register_forward_pre_hook(fn)
-
-        return fn
-
-    def __call__(self, module, input):
-        weight = self.compute_weight(module)
-        setattr(module, self.name, weight)
-
-
-def equal_lr(module, name='weight'):
-    EqualLR.apply(module, name)
-
-    return module
-
+# Credit: https://github.com/rosinality/stylegan2-pytorch/blob/master/model.py#L94
 class EqualLRConv2d(nn.Module):
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self, in_channel, out_channel, kernel_size, stride=1, padding=0, bias=True
+    ):
         super().__init__()
 
-        conv = nn.Conv2d(*args, **kwargs)
-        conv.weight.data.normal_()
-        conv.bias.data.zero_()
+        self.weight = nn.Parameter(
+            torch.randn(out_channel, in_channel, kernel_size, kernel_size)
+        )
+        self.scale = 1 / math.sqrt(in_channel * kernel_size ** 2)
 
-        self.conv = equal_lr(conv)
+        self.stride = stride
+        self.padding = padding
 
-    def forward(self, input):
-        return self.conv(input)
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(out_channel))
 
-
-class EqualLRConvTranspose2d(nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-
-        conv = nn.ConvTranspose2d(*args, **kwargs)
-        conv.weight.data.normal_()
-        conv.bias.data.zero_()
-
-        self.conv = equal_lr(conv)
+        else:
+            self.bias = None
 
     def forward(self, input):
-        return self.conv(input)
+        out = F.conv2d(
+            input,
+            self.weight * self.scale,
+            bias=self.bias,
+            stride=self.stride,
+            padding=self.padding,
+        )
+
+        return out
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}({self.weight.shape[1]}, {self.weight.shape[0]},"
+            f" {self.weight.shape[2]}, stride={self.stride}, padding={self.padding})"
+        )
 
 class EqualLRLinear(nn.Module):
-    def __init__(self, in_dim, out_dim):
+    def __init__(
+        self, in_dim, out_dim, bias=True, bias_init=0, lr_mul=1, activation=None
+    ):
         super().__init__()
 
-        linear = nn.Linear(in_dim, out_dim)
-        linear.weight.data.normal_()
-        linear.bias.data.zero_()
+        self.weight = nn.Parameter(torch.randn(out_dim, in_dim).div_(lr_mul))
 
-        self.linear = equal_lr(linear)
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(out_dim).fill_(bias_init))
+
+        else:
+            self.bias = None
+
+        self.activation = activation
+
+        self.scale = (1 / math.sqrt(in_dim)) * lr_mul
+        self.lr_mul = lr_mul
 
     def forward(self, input):
-        return self.linear(input)
+        if self.activation:
+            out = F.linear(input, self.weight * self.scale)
+            out = fused_leaky_relu(out, self.bias * self.lr_mul)
+        else:
+            out = F.linear(
+                input, self.weight * self.scale, bias=self.bias * self.lr_mul
+            )
+
+        return out
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}({self.weight.shape[1]}, {self.weight.shape[0]})"
+        )
 
 def EMA(model1, model2, decay=0.999):
     par1 = dict(model1.named_parameters())
@@ -202,21 +204,21 @@ class MappingNetwork(nn.Module):
         
         # I set output to 256 to match the shortened G case
         self.layers = nn.Sequential(
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(256, 256),
+            EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
         )
     
@@ -259,7 +261,7 @@ class mod_demod(nn.Module):
         weight = conv_weight * s
 
         # Demodulation
-        demod = torch.rsqrt(weight.pow(2).sum([2,3,4])+ 1e-8)
+        demod = torch.rsqrt(weight.pow(2).sum([2,3,4], ke) + 1e-8)
         weight = weight * demod.unsqueeze(2).unsqueeze(3).unsqueeze(4)
 
         # Return the weight's of the convolution
@@ -320,7 +322,7 @@ class g_style_block(nn.Module):
         ksize1, 
         padding,
         upsample=True,
-        latent_dim=256,
+        latent_dim=512,
     ):
         super().__init__()
 
@@ -363,7 +365,7 @@ class g_style_block(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, in_c=256):
+    def __init__(self, in_c=512):
         super().__init__()
         
         self.g_mapping = MappingNetwork()
@@ -513,7 +515,7 @@ class d_style_block(nn.Module):
         return out
 
 class Discriminator(nn.Module):
-    def __init__(self, out_c=256):
+    def __init__(self, out_c=512):
         super().__init__()
 
         self.from_rgb = EqualLRConv2d(3, out_c//4, 1)
@@ -548,10 +550,10 @@ class Discriminator(nn.Module):
         return out
 
 # R1 regulariser uses the Goodfellow GAN training algorithm
-def d_loss(real_images, gen_images):
+def d_loss(real_pred, fake_pred):
     # Do this outside the func
-    real_pred = d(real_images)
-    fake_pred = d(gen_images)
+    #real_pred = d(real_images)
+    #fake_pred = d(gen_images)
 
     real_loss = F.softplus(-real_pred).mean()
     fake_loss = F.softplus(fake_pred).mean()
@@ -561,9 +563,17 @@ def d_loss(real_images, gen_images):
     return d_loss
 
 def r1_loss(real_pred, real_images):
-    grad_real, = torch.autograd.grad(
-        outputs=real_pred.sum(), inputs=real_images, create_graph=True
-    )
+    with torch.set_grad_enabled(True):        
+        # Get gradients with respect to inputs only
+        grad_real, = torch.autograd.grad(
+            outputs=real_pred.sum(),
+            inputs=real_images,
+            create_graph=True,
+            only_inputs=True  # Only compute gradients for inputs, not weights
+        )
+    #grad_real, = torch.autograd.grad(
+    #    outputs=real_pred.sum(), inputs=real_images, create_graph=True
+    #)
     grad_penalty = grad_real.pow(2).reshape(grad_real.shape[0], -1).sum(1).mean()
 
     return grad_penalty
@@ -573,17 +583,15 @@ def g_loss(fake_pred):
 
     return fake_loss
 
-
 # Credit: https://github.com/rosinality/stylegan2-pytorch/blob/master/train.py#L87
 def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
     noise = torch.randn_like(fake_img) / math.sqrt(
         fake_img.shape[2] * fake_img.shape[3]
     )
     
-    outputs = (fake_img * noise).sum()
-    
     grad, = torch.autograd.grad(
-        outputs=outputs, inputs=latents, create_graph=True
+        outputs=(fake_img * noise).sum(), inputs=latents, create_graph=True,
+        retain_graph=True, only_inputs=True
     )
     
     path_lengths = torch.sqrt(grad.pow(2).sum(1).mean(0))
@@ -592,11 +600,15 @@ def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
     
     return path_penalty, path_mean.detach(), path_lengths
 
+def requires_grad(model, flag=True):
+    for p in model.parameters():
+        p.requires_grad = flag
+
 def get_dataloader(image_size, batch_size=8):
     # Just some basic transforms, image_size holds the resolution of the current layer
     # so we create a new dataloader after stabilising each layer
     transform = transforms.Compose([
-        transforms.Resize((image_size, image_size)),  # Resize images to the required size
+        #transforms.Resize((image_size, image_size)),  # Resize images to the required size
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
@@ -611,10 +623,10 @@ def get_dataloader(image_size, batch_size=8):
         dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,  # Increase based on your CPU cores (showing many cores available)
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=4,  # Increase prefetch to reduce CPU waiting
+        num_workers=4,
+        #pin_memory=True,
+        #persistent_workers=True,
+        #prefetch_factor=4,  # Increase prefetch to reduce CPU waiting
         drop_last=True
     )
 
@@ -763,7 +775,7 @@ num_iters_for_eval = 5000
 
 # We want to gen 70k fake images for FID calculation to match 30k real images
 num_fake_images = 70000
-latent_dim = 256  # Adjust based on your model's input size
+latent_dim = 512  # Adjust based on your model's input size
 
 # Define vars used within training loop
 d_loss_val = None
@@ -790,8 +802,10 @@ file_prefix = os.path.join('./checkpoints', f'memory_profile_{timestamp}')
 try:
     # Begin introducing layer phase
     for i in pbar:
-        d.zero_grad()
-        
+        #d.zero_grad()
+        requires_grad(g, False)
+        requires_grad(d, True)
+
         try:
             real_imgs, label = next(dataset)
         except (OSError, StopIteration):
@@ -799,37 +813,36 @@ try:
             # basically starting again
             dataset = iter(data_loader)
             real_imgs, label = next(dataset)
-    
+
         # Train D
         real_size = real_imgs.size(0)
         real_imgs = real_imgs.to(device)
         label = label.to(device)
         real_preds = d(real_imgs)
         # The line below implements a small weight penalty
-        # It ensures the D loss isnt too far away from 0 preventing extreme outputs 
-        # real_preds = real_preds.mean() - 0.001 * (real_preds**2).mean()
-    
+        # It ensures the D loss isnt too far away from 0 preventing extreme outputs
+        #real_preds = real_preds.mean() - 0.001 * (real_preds**2).mean()
+
         # Create gen images and gen preds
         z = torch.randn(real_size, latent_dim, device=device)
         gen_imgs = g(z)
-        gen_preds = d(gen_imgs)
-        
-        d_loss_val = d_loss(real_imgs, gen_imgs)
-        
+        gen_preds = d(gen_imgs.detach())
+
+        d_loss_val = d_loss(real_preds, gen_preds)
+
+        d.zero_grad()
         d_loss_val.backward()
         d_optimizer.step()
-    
+
         # Implement a way to run r1 reg every 16 batches
-    
-        #d_r1_regularise = i % d_reg_freq == 0
-        d_r1_regularise = False
+
+        d_r1_regularise = i % d_reg_freq == 0
         if d_r1_regularise:
             real_imgs.requires_grad_(True)
-    
+
             real_preds = d(real_imgs)
-    
             r1_loss_val = r1_loss(real_preds, real_imgs)
-    
+
             d.zero_grad()
             gamma = 10
             # *16 from appendix b
@@ -839,21 +852,23 @@ try:
             d_optimizer.step()
     
         # Now lets train the Generator
-        g.zero_grad()
+        #g.zero_grad()
+        requires_grad(g, True)
+        requires_grad(d, False)
     
         z = torch.randn(real_size, latent_dim, device=device)
         gen_imgs = g(z)
         gen_preds = d(gen_imgs)
     
         g_loss_val = g_loss(gen_preds)
-        
+
+        g.zero_grad()
         g_loss_val.backward()
         g_optimizer.step()
     
         # PPL reg, r1 only used on D
         # PPL a metric for gen images only
-        #g_ppl_regularise = i % g_reg_freq == 0
-        g_ppl_regularise = False
+        g_ppl_regularise = i % g_reg_freq == 0
         if g_ppl_regularise:
             z = torch.randn(real_size, latent_dim, device=device)
             gen_imgs, latents = g(z, return_latents=True)  # PPL calculation relies on latent vectors which produced imgs
@@ -863,11 +878,12 @@ try:
             g.zero_grad()
             
             ppl_loss = 2 * g_reg_freq * ppl_loss
+            #ppl_loss += 0 * gen_imgs[0, 0, 0, 0]
+            
             ppl_loss.backward()
-    
             g_optimizer.step()
             
-        EMA(g_running, g)
+        EMA(g_running, g, decay=0.999)
         
         if i % num_iters_for_eval == 0:
             sample_z = torch.randn(16, latent_dim, device=device)
