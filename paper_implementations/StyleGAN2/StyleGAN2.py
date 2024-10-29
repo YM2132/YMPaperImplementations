@@ -1,3 +1,5 @@
+# StyleGAN training is heavily dependant on FFHQ, see https://gwern.net/face#compute and https://github.com/l4rz/practical-aspects-of-stylegan2-training?tab=readme-ov-file
+
 import torch
 import torchvision
 
@@ -261,8 +263,8 @@ class mod_demod(nn.Module):
         weight = conv_weight * s
 
         # Demodulation
-        demod = torch.rsqrt(weight.pow(2).sum([2,3,4], ke) + 1e-8)
-        weight = weight * demod.unsqueeze(2).unsqueeze(3).unsqueeze(4)
+        demod = torch.rsqrt(weight.pow(2).sum([2,3,4], keepdim=True) + 1e-8)
+        weight = weight * demod
 
         # Return the weight's of the convolution
         #return nn.Parameter(weight)
@@ -300,7 +302,6 @@ class Conv2d_mod(nn.Module):
 
         #print(weights.shape)
         weights = weights.view(batch * self.out_channels, self.in_channels, self.kernel_size, self.kernel_size)
-        #weights = weights.view(batch * self.out_channels, channels, self.kernel_size, self.kernel_size)
 
         x = x.view(1, batch*channels, H, W)
         #print(f'x.shape: {x.shape} | weights.shape: {weights.shape}')
@@ -322,7 +323,7 @@ class g_style_block(nn.Module):
         ksize1, 
         padding,
         upsample=True,
-        latent_dim=512,
+        latent_dim=256,
     ):
         super().__init__()
 
@@ -568,6 +569,7 @@ def r1_loss(real_pred, real_images):
         grad_real, = torch.autograd.grad(
             outputs=real_pred.sum(),
             inputs=real_images,
+            grad_outputs=real_pred.new_ones(real_pred.shape),
             create_graph=True,
             only_inputs=True  # Only compute gradients for inputs, not weights
         )
@@ -732,10 +734,13 @@ fid = FrechetInceptionDistance(feature=2048).to(device)
 
 mapping_params, other_params = get_params_with_lr(g)
 
-lr = 0.002
+#lr = 0.001
+lr = 0.0002
+# Adjusting LR seemed to improve perf but the training would always break down at iter 25k
+# having a lower LR would just make the breakdown smaller
 mapping_lr = lr * 0.01
 
-g_reg_freq = 8
+g_reg_freq = 4
 d_reg_freq = 16
 
 g_reg_adjustment = g_reg_freq / (g_reg_freq + 1)
@@ -784,7 +789,7 @@ r1_loss_val = None
 mean_path_length = 0
 
 resolution = 256  # Resolution is always 256
-batch_size = 16  # CHANGE to 32
+batch_size = 24  # CHANGE to 32
 total_iters = 800000
 data_loader = get_dataloader(resolution, batch_size)
 dataset = iter(data_loader)
@@ -844,7 +849,8 @@ try:
             r1_loss_val = r1_loss(real_preds, real_imgs)
 
             d.zero_grad()
-            gamma = 10
+            #amma = 10
+            #gamma = 0.01
             # *16 from appendix b
             r1_reg = (gamma/2 * r1_loss_val * d_reg_freq + 0 * real_preds[0])
             r1_reg.backward()
@@ -883,9 +889,10 @@ try:
             ppl_loss.backward()
             g_optimizer.step()
             
-        EMA(g_running, g, decay=0.999)
+        #EMA(g_running, g, decay=0.999)
+        EMA(g_running, g, decay=0.995)
         
-        if i % num_iters_for_eval == 0:
+        if i > 0 and i % num_iters_for_eval == 0:
             sample_z = torch.randn(16, latent_dim, device=device)
             sample_imgs_EMA = g_running(sample_z)
             save_image(sample_imgs_EMA, f'{sample_dir}/sample__iter_{i}.png', nrow=4, normalize=True)
