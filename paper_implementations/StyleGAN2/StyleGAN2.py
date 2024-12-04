@@ -1,4 +1,6 @@
 # StyleGAN training is heavily dependant on FFHQ, see https://gwern.net/face#compute and https://github.com/l4rz/practical-aspects-of-stylegan2-training?tab=readme-ov-file
+import os
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 import torch
 import torchvision
@@ -20,13 +22,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 from datetime import datetime
-import os
 from math import sqrt
 import math
 import sys
 import random
 
-MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT = 100000
 
 # We can make use of a GPU if you have one on your computer. This works for Nvidia and M series GPU's
 if torch.backends.mps.is_available():
@@ -156,7 +156,8 @@ class PixelNorm(nn.Module):
                                   + 1e-8)
 
 class MiniBatchStdDev(nn.Module):
-    def __init__(self, group_size=4):
+    # try 32 as it seems to come from batch_size / num_gpu
+    def __init__(self, group_size=4):  # 8 from the paper lets test it # But also 4 when they have batch size of 32 group_size=4 
         super().__init__()
         self.group_size = group_size
     
@@ -204,24 +205,24 @@ class MappingNetwork(nn.Module):
         
         self.norm = PixelNorm()
         
-        # I set output to 256 to match the shortened G case
+        # I set output to 512 to match the shortened G case
         self.layers = nn.Sequential(
             EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
             EqualLRLinear(512, 512),
             nn.LeakyReLU(0.2),
-            EqualLRLinear(512, 512),
-            nn.LeakyReLU(0.2),
-            EqualLRLinear(512, 512),
-            nn.LeakyReLU(0.2),
-            EqualLRLinear(512, 512),
-            nn.LeakyReLU(0.2),
-            EqualLRLinear(512, 512),
-            nn.LeakyReLU(0.2),
-            EqualLRLinear(512, 512),
-            nn.LeakyReLU(0.2),
-            EqualLRLinear(512, 512),
-            nn.LeakyReLU(0.2),
+            #EqualLRLinear(512, 512),
+            #nn.LeakyReLU(0.2),
+            #EqualLRLinear(512, 512),
+            #nn.LeakyReLU(0.2),
+            #EqualLRLinear(512, 512),
+            #nn.LeakyReLU(0.2),
+            #EqualLRLinear(512, 512),
+            #nn.LeakyReLU(0.2),
+            #EqualLRLinear(512, 512),
+            #nn.LeakyReLU(0.2),
+            #EqualLRLinear(512, 512),
+            #nn.LeakyReLU(0.2),
         )
     
     def forward(self, x):
@@ -235,7 +236,8 @@ class MappingNetwork(nn.Module):
 class Blur(nn.Module):
     def __init__(self):
         super().__init__()
-        f = torch.Tensor([1, 2, 1])
+        #f = torch.Tensor([1, 2, 1])
+        f = torch.Tensor([1, 3, 3, 1])
         self.register_buffer('f', f)
 
     def forward(self, x):
@@ -312,9 +314,6 @@ class Conv2d_mod(nn.Module):
             
         return out
 
-
-# ABLATION TEST 1: RUNNING WITH BASE CONV2D and WITHOUT G REG- TODO
-# ABLATION TEST 2: RUN WITHOUT THE PPL REG AND R1 REG - TODO
 class g_style_block(nn.Module):
     def __init__(
         self, 
@@ -323,7 +322,7 @@ class g_style_block(nn.Module):
         ksize1, 
         padding,
         upsample=True,
-        latent_dim=256,
+        latent_dim=512,
     ):
         super().__init__()
 
@@ -370,6 +369,10 @@ class Generator(nn.Module):
         super().__init__()
         
         self.g_mapping = MappingNetwork()
+
+        #fmaps = 0.5
+        fmaps = 1.0
+        in_c = int(in_c * fmaps)
         
         self.block_4x4 = g_style_block(in_c, in_c, 3, 1, upsample=False)
         self.block_8x8 = g_style_block(in_c, in_c, 3, 1)
@@ -377,7 +380,7 @@ class Generator(nn.Module):
         self.block_32x32 = g_style_block(in_c, in_c, 3, 1)
         self.block_64x64 = g_style_block(in_c, in_c//2, 3, 1)
         self.block_128x128 = g_style_block(in_c//2, in_c//4, 3, 1)
-        self.block_256x256 = g_style_block(in_c//4, in_c//4, 3, 1)
+        #self.block_256x256 = g_style_block(in_c//4, in_c//4, 3, 1)
 
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear')
         
@@ -387,7 +390,7 @@ class Generator(nn.Module):
         self.to_rgb_32 = EqualLRConv2d(in_c, 3, 1)
         self.to_rgb_64 = EqualLRConv2d(in_c//2, 3, 1)
         self.to_rgb_128 = EqualLRConv2d(in_c//4, 3, 1)
-        self.to_rgb_256 = EqualLRConv2d(in_c//4, 3, 1)
+        #self.to_rgb_256 = EqualLRConv2d(in_c//4, 3, 1)
                 
         self.tanh = nn.Tanh()
 
@@ -398,7 +401,8 @@ class Generator(nn.Module):
             z2 = torch.randn_like(z)
             w2 = self.g_mapping(z2)
 
-            crossover_point = random.randint(1, 7)
+            #crossover_point = random.randint(1, 7)
+            crossover_point = random.randint(1, 6)
         else:
             crossover_point = None
 
@@ -412,47 +416,52 @@ class Generator(nn.Module):
         out = self.block_8x8(w_to_use, out)
         
         out_8 = self.to_rgb_8(out)
-        out_8 += out_4
+        out_8 += out_4 * (1 / np.sqrt(2))
         out_8 = self.upsample(out_8)
             
         w_to_use = w2 if crossover_point and 3 >= crossover_point else w
         out = self.block_16x16(w_to_use, out)
         
         out_16 = self.to_rgb_16(out)
-        out_16 += out_8
+        out_16 += out_8 * (1 / np.sqrt(2))
         out_16 = self.upsample(out_16)
 
         w_to_use = w2 if crossover_point and 4 >= crossover_point else w
         out = self.block_32x32(w_to_use, out)
         
         out_32 = self.to_rgb_32(out)
-        out_32 += out_16
+        out_32 += out_16 * (1 / np.sqrt(2))
         out_32 = self.upsample(out_32)
 
         w_to_use = w2 if crossover_point and 5 >= crossover_point else w
         out = self.block_64x64(w_to_use, out)
         
         out_64 = self.to_rgb_64(out)
-        out_64 += out_32
+        out_64 += out_32 * (1 / np.sqrt(2))
         out_64 = self.upsample(out_64)
 
         w_to_use = w2 if crossover_point and 6 >= crossover_point else w    
         out = self.block_128x128(w_to_use, out)
         
         out_128 = self.to_rgb_128(out)
-        out_128 += out_64
-        out_128= self.upsample(out_128)
+        out_128 += out_64 * (1 / np.sqrt(2))
+        #out_128= self.upsample(out_128)
 
-        w_to_use = w2 if crossover_point and 7 >= crossover_point else w
-        out = self.block_256x256(w_to_use, out)
+        #w_to_use = w2 if crossover_point and 7 >= crossover_point else w
+        #out = self.block_256x256(w_to_use, out)
             
-        out_256 = self.to_rgb_256(out)
-        out_256 += out_128
+        #out_256 = self.to_rgb_256(out)
+        #out_256 += out_128 * (1 / np.sqrt(2))
+        
+        #if return_latents:
+        #    return out_256, w_to_use
+        #else:
+        #    return out_256
         
         if return_latents:
-            return out_256, w_to_use
+            return out_128, w_to_use
         else:
-            return out_256
+            return out_128
 
 class d_style_block(nn.Module):
     def __init__(
@@ -519,9 +528,13 @@ class Discriminator(nn.Module):
     def __init__(self, out_c=512):
         super().__init__()
 
+        #fmaps = 0.5
+        fmaps = 0.5
+        out_c = int(out_c * fmaps)
+
         self.from_rgb = EqualLRConv2d(3, out_c//4, 1)
 
-        self.block_256x256 = d_style_block(out_c//4, out_c//4, 3, 1)
+        #self.block_256x256 = d_style_block(out_c//4, out_c//4, 3, 1)
         self.block_128x128 = d_style_block(out_c//4, out_c//2, 3, 1)
         self.block_64x64 = d_style_block(out_c//2, out_c, 3, 1)
         self.block_32x32 =  d_style_block(out_c, out_c, 3, 1)
@@ -535,7 +548,7 @@ class Discriminator(nn.Module):
         
         out = self.from_rgb(x)
 
-        out = self.block_256x256(out)
+        #out = self.block_256x256(out)
         out = self.block_128x128(out)
         out = self.block_64x64(out)
         out = self.block_32x32(out)
@@ -569,7 +582,7 @@ def r1_loss(real_pred, real_images):
         grad_real, = torch.autograd.grad(
             outputs=real_pred.sum(),
             inputs=real_images,
-            grad_outputs=real_pred.new_ones(real_pred.shape),
+            grad_outputs=torch.ones([], device=real_pred.device),
             create_graph=True,
             only_inputs=True  # Only compute gradients for inputs, not weights
         )
@@ -599,6 +612,9 @@ def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
     path_lengths = torch.sqrt(grad.pow(2).sum(1).mean(0))
     path_mean = mean_path_length + decay * (path_lengths.mean() - mean_path_length)
     path_penalty = (path_lengths - path_mean).pow(2).mean()
+
+    del noise, grad
+    torch.cuda.empty_cache()
     
     return path_penalty, path_mean.detach(), path_lengths
 
@@ -607,28 +623,23 @@ def requires_grad(model, flag=True):
         p.requires_grad = flag
 
 def get_dataloader(image_size, batch_size=8):
-    # Just some basic transforms, image_size holds the resolution of the current layer
-    # so we create a new dataloader after stabilising each layer
+    # We only call this function once now, unlike in the StyleGAN where it would be required that we change resolution of the dataset when 
+    # the network grew
     transform = transforms.Compose([
-        #transforms.Resize((image_size, image_size)),  # Resize images to the required size
-        transforms.RandomHorizontalFlip(p=0.5),
+        #transforms.Resize((image_size, image_size)),  # No longer need to resize the images
+        transforms.RandomHorizontalFlip(p=0.5),  # Add a random flip
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
 
-    # I assume your CelebA HQ 256 directory is in the same one as this notebook, feel free to change it
-    # Lets now use FFHQ - CelebA-HQ doesnt seem to work perhaps changing dataset will work?
+    # Lets now use FFHQ 
     dataset = ImageFolder(root='./ffhq256_imgs', transform=transform)
-    #dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4, drop_last=True)
 
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,
-        #pin_memory=True,
-        #persistent_workers=True,
-        #prefetch_factor=4,  # Increase prefetch to reduce CPU waiting
         drop_last=True
     )
 
@@ -697,6 +708,9 @@ def add_real_imgs(data_loader):
         imgs = imgs.to(torch.uint8)
         fid.update(imgs, real=True)
 
+        del imgs
+        torch.cuda.empty_cache()
+
 # Final function which combines both of the image adding functions
 def calculate_and_save_fid(iteration, data_loader, g_running, num_fake_images, batch_size, latent_dim, device, fid_file):
     # We reset the FID score statistics for recalculation
@@ -711,6 +725,29 @@ def calculate_and_save_fid(iteration, data_loader, g_running, num_fake_images, b
     # We also save the scores to a file
     with open(fid_file, 'a') as f:
         f.write(f"Iteration {iteration}: {fid_score.item()}\n")
+
+def initialize_weights(model):
+    """Initialize weights for all Conv2d and Linear layers"""
+    for m in model.modules():
+        if isinstance(m, (nn.Conv2d, nn.Linear)):
+            # He initialization adjusted for LeakyReLU
+            nn.init.kaiming_normal_(m.weight, a=0.2, mode='fan_in', nonlinearity='leaky_relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, EqualLRConv2d):
+            # EqualLR layers are already initialized in their __init__
+            continue
+        elif isinstance(m, EqualLRLinear):
+            # EqualLR layers are already initialized in their __init__
+            continue
+# Add this to your model initialization:
+def init_models(g, d, g_running):
+    initialize_weights(g)
+    initialize_weights(d)
+    initialize_weights(g_running)
+    
+    # Copy generator weights to running average model
+    g_running.load_state_dict(g.state_dict())
 
 # Create new checkpoint dir with timestamp
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -728,14 +765,29 @@ g = Generator().to(device)
 d = Discriminator().to(device)
 g_running = Generator().to(device)
 
+init_models(g, d, g_running)
+
 g_running.train(False)
 
 fid = FrechetInceptionDistance(feature=2048).to(device)
 
 mapping_params, other_params = get_params_with_lr(g)
 
-#lr = 0.001
-lr = 0.0002
+# I was wrong about the batching. They used a batch size of 64 total in the StyleGAN2-ADA paper with 16 on each GPU
+#lr = 0.002  # Not trying THIS YET 01/12/24
+#lr = 0.00025
+
+#lr = 0.00015625
+#lr = 0.00016  #https://github.com/NVlabs/stylegan2-ada-pytorch/blob/main/train.py#L157
+#lr = 0.00008
+lr = 0.0025  # Way too high. https://github.com/NVlabs/stylegan3/blob/main/docs/configs.md#total-training-time and https://medium.com/@jules.padova/stylegan-deep-dive-from-its-architecture-to-how-to-make-synthetic-humans-e02c242a8b7d
+#lr = 0.00005  # 0.00008 is better
+# Let's reduce LR after checkpoint 215k which has FID of 113
+#lr = 0.00001 - DIDNT DO MUCH LR DECAY NOT THE ANSWER SWAY
+
+# in the paper batch=64 and 8 gpus so 512 imgs total and lr=0.0025. # THIS IS WRONG in StyleGAN2 they use batch 32 with 4 on each GPU and in
+# ADA they use batch=64 with 8 on each GPU
+
 # Adjusting LR seemed to improve perf but the training would always break down at iter 25k
 # having a lower LR would just make the breakdown smaller
 mapping_lr = lr * 0.01
@@ -759,14 +811,14 @@ if resume_checkpoint:
     if os.path.isfile(resume_checkpoint):
         print(f"=> loading checkpoint '{resume_checkpoint}'")
         checkpoint = torch.load(resume_checkpoint, weights_only=False)
-        start_iter = checkpoint['iteration'] + 1
+        start_iter = checkpoint['iteration'] + 1 + 180000 # We start at iter 35k which was after continuing from iter 180k
         g.load_state_dict(checkpoint['g_state_dict'])
         d.load_state_dict(checkpoint['d_state_dict'])
         g_running.load_state_dict(checkpoint['g_running_state_dict'])
         g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
         d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
 
-        print(f"=> loaded checkpoint '{resume_checkpoint}' (layer {start_layer}, iteration {start_iter})")
+        print(f"=> loaded checkpoint '{resume_checkpoint}' ( iteration {start_iter})")
     else:
         print(f"=> no checkpoint found at '{resume_checkpoint}'")
 else:
@@ -789,8 +841,11 @@ r1_loss_val = None
 mean_path_length = 0
 
 resolution = 256  # Resolution is always 256
-batch_size = 24  # CHANGE to 32
-total_iters = 800000
+resolution = 128  # Resolution is always 256
+batch_size = 32  # CHANGE to 32, 64 will run but is awfully slow - TRY 4???
+total_iters = 25000 * 1000 // batch_size  # k imgs from paper
+if resume_checkpoint:
+    total_iters -= start_iter
 data_loader = get_dataloader(resolution, batch_size)
 dataset = iter(data_loader)
 
@@ -798,11 +853,11 @@ dataset = iter(data_loader)
 print(f'Training resolution: {resolution}x{resolution}, Batch size: {batch_size}')
 pbar = tqdm(range(total_iters))
 
-torch.cuda.memory._record_memory_history(
-       max_entries=MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT
-   )
+#torch.cuda.memory._record_memory_history(
+#       max_entries=MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT
+#   )
 # File path for memory log
-file_prefix = os.path.join('./checkpoints', f'memory_profile_{timestamp}')
+#file_prefix = os.path.join('./checkpoints', f'memory_profile_{timestamp}')
 
 try:
     # Begin introducing layer phase
@@ -849,10 +904,13 @@ try:
             r1_loss_val = r1_loss(real_preds, real_imgs)
 
             d.zero_grad()
-            #amma = 10
+            #gamma = 10
+            #gamma = 1. # from https://github.com/NVlabs/stylegan2-ada-pytorch/blob/main/train.py#L157
             #gamma = 0.01
+            #gamma = 0.8192
+            gamma = 0.1024
             # *16 from appendix b
-            r1_reg = (gamma/2 * r1_loss_val * d_reg_freq + 0 * real_preds[0])
+            r1_reg = ((gamma*0.5) * r1_loss_val * d_reg_freq + 0 * real_preds[0])
             r1_reg.backward()
     
             d_optimizer.step()
@@ -889,14 +947,13 @@ try:
             ppl_loss.backward()
             g_optimizer.step()
             
-        #EMA(g_running, g, decay=0.999)
-        EMA(g_running, g, decay=0.995)
+        EMA(g_running, g, decay=0.999) # CHANGED EMA AND NEED TO TRY DIFF MBGROUP SIZE
         
         if i > 0 and i % num_iters_for_eval == 0:
             sample_z = torch.randn(16, latent_dim, device=device)
             sample_imgs_EMA = g_running(sample_z)
             save_image(sample_imgs_EMA, f'{sample_dir}/sample__iter_{i}.png', nrow=4, normalize=True)
-            print(f'G_running images images after iter: {i}')
+            print(f'G_running images images after iter: {i+start_iter}')
     
             calculate_and_save_fid(i, data_loader, g_running, num_fake_images, batch_size, latent_dim, device, fid_file)
     
@@ -910,10 +967,10 @@ try:
             }, f'{checkpoint_dir}/checkpoint_iter_{i}.pth')
 
             # Log memory usage
-            try:
-                torch.cuda.memory._dump_snapshot(f"{file_prefix}.pickle")
-            except Exception as e:
-                logger.error(f"Failed to capture memory snapshot {e}")
+            #try:
+            #    torch.cuda.memory._dump_snapshot(f"{file_prefix}.pickle")
+            #except Exception as e:
+            #    logger.error(f"Failed to capture memory snapshot {e}")
             
 except Exception as e:
     print(f"Error occurred at iteration {i}: {str(e)}")
