@@ -394,7 +394,7 @@ class Generator(nn.Module):
                 
         self.tanh = nn.Tanh()
 
-    def forward(self, z, return_latents=False):   
+    '''def forward(self, z, return_latents=False):   
         w = self.g_mapping(z)
         
         if torch.rand(1).item() < 0.9:
@@ -461,7 +461,67 @@ class Generator(nn.Module):
         if return_latents:
             return out_128, w_to_use
         else:
+            return out_128'''
+
+    def forward(self, z, return_latents=False):
+        w = self.g_mapping(z)
+        batch_size = z.size(0)
+        
+        # Determine which samples undergo style mixing
+        mixing = torch.rand(batch_size, device=z.device) < 0.9
+        
+        # Generate z2 and w2 for samples that undergo style mixing
+        z2 = torch.randn_like(z)
+        w2 = self.g_mapping(z2)
+        
+        # Generate crossover points for each sample
+        crossover_points = torch.randint(1, 7, (batch_size,), device=z.device)
+        
+        # Initialize a list to hold the styles for each layer
+        styles = []
+        
+        # For each layer, select w or w2 based on crossover points
+        for layer_idx in range(7):  # Assuming 7 layers
+            # Create a mask for samples that should use w2 at this layer
+            use_w2 = mixing & (crossover_points <= layer_idx)
+            # Select w or w2 for each sample in this layer
+            style = torch.where(use_w2.unsqueeze(1), w2, w)
+            styles.append(style)
+        
+        # Apply styles in generator blocks
+        out = self.block_4x4(styles[0])
+        out_4 = self.to_rgb_4(out)
+        out_4 = self.upsample(out_4)
+        
+        out = self.block_8x8(styles[1], out)
+        out_8 = self.to_rgb_8(out)
+        out_8 += out_4 * (1 / np.sqrt(2))
+        out_8 = self.upsample(out_8)
+        
+        out = self.block_16x16(styles[2], out)
+        out_16 = self.to_rgb_16(out)
+        out_16 += out_8 * (1 / np.sqrt(2))
+        out_16 = self.upsample(out_16)
+        
+        out = self.block_32x32(styles[3], out)
+        out_32 = self.to_rgb_32(out)
+        out_32 += out_16 * (1 / np.sqrt(2))
+        out_32 = self.upsample(out_32)
+        
+        out = self.block_64x64(styles[4], out)
+        out_64 = self.to_rgb_64(out)
+        out_64 += out_32 * (1 / np.sqrt(2))
+        out_64 = self.upsample(out_64)
+        
+        out = self.block_128x128(styles[5], out)
+        out_128 = self.to_rgb_128(out)
+        out_128 += out_64 * (1 / np.sqrt(2))
+        
+        if return_latents:
+            return out_128, styles[5]
+        else:
             return out_128
+        
 
 class d_style_block(nn.Module):
     def __init__(
