@@ -1,6 +1,6 @@
 # Yusuf's Deep Learning Paper Implementations
 
-<h3> Find here my implementations using PyTorch (numpy only implementations coming soon!!!) </h3>
+<h3> Find here a list of implementations: </h3>
 
 # Implementations:
   - [LeNet5](http://vision.stanford.edu/cs598_spring07/papers/Lecun98.pdf)
