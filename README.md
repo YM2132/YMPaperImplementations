@@ -1,6 +1,8 @@
+
+
 # Yusuf's Deep Learning Paper Implementations
 
-<h3> Find here a list of implementations: </h3>
+<h3> Find here a list of implementations: </h3>
 
 # Implementations:
   - [LeNet5](http://vision.stanford.edu/cs598_spring07/papers/Lecun98.pdf)
@@ -13,4 +15,4 @@
   - [StyleGAN2](https://arxiv.org/abs/1912.04958)
 
 
-These are my own work and come directly from implementing the network's from the paper's, this is my attempt to learn more about the fundamentals of deep learning and how we got to where we are today!
+This is my own work, coming directly from implementing the networks from the papers. It is my attempt to learn more about the fundamentals of deep learning and how we got to where we are today!
